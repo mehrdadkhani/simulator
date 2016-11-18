@@ -6,7 +6,7 @@
 #include <random>
 #include <thread>
 #include "dropping_packet_queue.hh"
-
+#include <pthread.h>
 /*    
    Proportional Integral controller Enhanced (PIE)
    AQM Implementation based on draft-ietf-aqm-pie-09
@@ -39,6 +39,8 @@ private:
     std::default_random_engine prng_;
     uint64_t last_update_;
     
+	pthread_t NN_t;
+	pthread_t DP_t;
 
 
     virtual const std::string & type( void ) const override

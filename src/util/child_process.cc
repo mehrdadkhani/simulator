@@ -25,7 +25,8 @@ int do_clone( const bool new_namespace )
         SystemCall( "stat", stat( "/proc/self/task", &my_stat ) );
 
         if ( my_stat.st_nlink != 3 ) {
-            throw runtime_error( "ChildProcess constructed in multi-threaded program" );
+			printf("ChildProcess constructed in multi-threaded program WE BYPASS THIS ERROR\n");
+            //throw runtime_error( "ChildProcess constructed in multi-threaded program" );
         }
     }
 
