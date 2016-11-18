@@ -28,11 +28,117 @@ struct NeuralNetwork{
 	float **b;	
 };
 
+#define STATE_DIM  24
+struct State{
+    float s[STATE_DIM];
+};
+
+
+
+#define STATE_RING_SIZE 16
+struct StateRing{
+    struct State ring[STATE_RING_SIZE];
+    int counter;
+};
+
+
+
+
+
+
+
+
+
 
 struct NeuralNetwork NN_A,NN_B;
-
 struct NeuralNetwork * NN_cur = NULL; 
 pthread_mutex_t swap_lock;
+
+
+struct StateRing stateRing;
+struct State * state_cur = NULL;
+
+
+float ring_avg(float* data, int start, int end)
+{
+    float sum = 0;
+    int ptr = start;
+    while(ptr <= end)
+    {
+        sum += data[ptr % 256];
+        ptr ++;
+    }
+    return sum / (end - start + 1);
+}
+
+
+void UpdateState(float qdelay, float dprate)
+{
+    static float qdelay_list[256];
+    static float dprate_list[256];
+    static int ptr = 256;
+
+    state_cur = &(stateRing.ring[stateRing.counter % STATE_RING_SIZE]);
+    stateRing.counter ++;
+    
+    qdelay_list[ptr % 256] = qdelay;
+    dprate_list[ptr % 256] = dprate;
+    
+    state_cur->s[0] = ring_avg(qdelay_list,ptr-63, ptr);
+    state_cur->s[1] = ring_avg(dprate_list,ptr-63, ptr);
+    state_cur->s[2] = ring_avg(qdelay_list,ptr-31, ptr);
+    state_cur->s[3] = ring_avg(dprate_list,ptr-31, ptr);
+    state_cur->s[4] = ring_avg(qdelay_list,ptr-15, ptr);
+    state_cur->s[5] = ring_avg(dprate_list,ptr-15, ptr);
+    state_cur->s[6] = ring_avg(qdelay_list,ptr-7, ptr);
+    state_cur->s[7] = ring_avg(dprate_list,ptr-7, ptr);
+
+    for(int i = 0; i<8; i++)
+    {
+        state_cur->s[i*2+8] = qdelay_list[(ptr - 7 + i)%256];
+        state_cur->s[i*2+8+1] = dprate_list[(ptr - 7 + i)%256];
+    }
+    
+    ptr ++;    
+}
+
+
+void printStateRing()
+{
+    FILE *fp = NULL;
+
+    fp = fopen("/home/songtao/QueueManagement/rl-qm/mahimahiInterface/statering.txt","w");
+
+    if(fp == NULL)
+    {
+        printf("Failed to open statering file\n");
+    }
+    else
+    {
+        for(int i = 0; i<STATE_RING_SIZE - 1; i++)
+        {
+            fprintf(fp,"%d", stateRing.counter - STATE_RING_SIZE + 1+ i);
+            for(int j = 0; j< STATE_DIM; j++)
+            {
+               fprintf(fp," %f",stateRing.ring[(stateRing.counter - STATE_RING_SIZE + 1+ i)%STATE_RING_SIZE].s[j]);
+			   
+            }
+		
+            fprintf(fp," %f",stateRing.ring[(stateRing.counter - STATE_RING_SIZE + 1+ i + 1)%STATE_RING_SIZE].s[22]);
+            fprintf(fp," %f",stateRing.ring[(stateRing.counter - STATE_RING_SIZE + 1+ i + 1)%STATE_RING_SIZE].s[23]);
+
+            fprintf(fp,"\n");
+        }         
+
+
+        fclose(fp);
+    }
+    
+
+
+
+}
+
 
 
 
@@ -66,7 +172,7 @@ void initNN()
 
 
 	NN_cur = &NN_A;
-
+    stateRing.counter = STATE_RING_SIZE;
 }
 
 
@@ -121,8 +227,7 @@ void RunNN(float *input, float* output)
 
 	pthread_mutex_unlock(&swap_lock);
 
-	pout[0] = 1/1.0+exp(-pout[0]);
-
+	pin[0] = 1/(1.0+exp(-pin[0])) * 0.3;
 
 
 }
@@ -161,7 +266,7 @@ void* NN_thread(void* context)
 		}
 
 		FILE *fp = NULL;
-		fp = fopen("/home/songtaohe/Project/QueueManagement/rl-qm/mahimahiInterface/NN.txt","r");
+		fp = fopen("/home/songtao/QueueManagement/rl-qm/mahimahiInterface/NN.txt","r");
 		if(fp == NULL)
 		{
 			printf("Failed to load parameters\n");
@@ -192,14 +297,21 @@ void* NN_thread(void* context)
 //Update Drop Rate 
 void* UpdateDropRate_thread(void* context)
 {
-	float state[24];
+	//float state[24];
 	float action;
-
+    static float action_old = 0;
 	while(true)
 	{
-		sleep(1);
-		for(int i = 0; i<24; i++) state[i] = i;
-		RunNN(state, &action);
+		usleep(1000*20);
+		//for(int i = 0; i<24; i++) state[i] = i;
+		state_cur = &(stateRing.ring[stateRing.counter % STATE_RING_SIZE]);
+		RunNN(state_cur->s, &action);
+        
+        UpdateState((float)(*_current_qdelay), action_old);
+        printStateRing();
+
+
+        action_old = action;
 		rl_drop_prob = action;
 		printf("Current Drop Rate %.6lf Queue Size %u Bytes, Qdelay %u  Action %f\n", *_drop_prob, _size_bytes_queue,*_current_qdelay, action);
 		
@@ -216,7 +328,7 @@ PIEPacketQueue::PIEPacketQueue( const string & args )
     max_burst_ ( get_arg( args, "max_burst" ) ),
     alpha_ ( 0.125 ),
     beta_ ( 1.25 ),
-    t_update_ ( 30 ),
+    t_update_ ( 10 ),
     dq_threshold_ ( 16384 ),
     drop_prob_ ( 0.0 ),
     burst_allowance_ ( 0 ),
@@ -291,7 +403,8 @@ bool PIEPacketQueue::drop_early ()
 
   double random = uniform_generator_(prng_);
 
-  if ( random < drop_prob_ ) {
+  //if ( random < drop_prob_ ) {
+  if ( random < rl_drop_prob ) {
     return true;
   }
   else
