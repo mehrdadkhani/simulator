@@ -1,4 +1,4 @@
-
+#include <sys/file.h>
 #include <chrono>
 #include <cmath>
 #include "pie_packet_queue.hh"
@@ -113,6 +113,10 @@ void UpdateState(float qdelay, float dprate)
 void printStateRing()
 {
     FILE *fp = NULL;
+    FILE *fp_lock = NULL;
+
+    fp_lock = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering_lock.txt","w");
+    flock(fileno(fp_lock), LOCK_EX);
 
     fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering.txt","w");
 
@@ -142,6 +146,8 @@ void printStateRing()
     }
     
 
+    flock(fileno(fp_lock), LOCK_UN);
+    fclose(fp_lock);
 
 
 }
@@ -274,7 +280,14 @@ void* NN_thread(void* context)
 		}
 		ret = 0;
 		FILE *fp = NULL;
+		FILE *fp_lock = NULL;
+
+
+		fp_lock = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN_lock.txt","r");
+		flock(fileno(fp_lock), LOCK_EX);
+
 		fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN.txt","r");
+		
 		total_read = 0;
 		if(fp == NULL)
 		{
@@ -283,6 +296,10 @@ void* NN_thread(void* context)
 		}
 		else
 		{
+			//flock(fileno(fp), LOCK_EX);
+			//fclose(fp);
+			//fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN.txt","r");
+
 			total_read = 0;
 			//printf("Load Parameters\n");
 			for(int i=0;i<MAXLAYER-1;i++)
@@ -299,16 +316,23 @@ void* NN_thread(void* context)
 				}
 
 			}
-			
+			//flock(fileno(fp), LOCK_UN);			
 			fclose(fp);
 		}
 		
+		flock(fileno(fp_lock), LOCK_UN);
+		fclose(fp_lock);
+
+
+
 		//printf("Swap NN Parameters\n");
 		//Swap Buffer
 		if(ret == total_read)
 			SwapNN();
 		else
-			printf("Load NN Parameters failed %d/%d\n",ret, total_read);
+		{
+			//printf("Load NN Parameters failed %d/%d\n",ret, total_read);
+		}
 
 	}
 	return context;
@@ -382,7 +406,7 @@ void* UpdateDropRate_thread(void* context)
 		}
 
 		//printf("Current Drop Rate %.6lf Queue Size %u Bytes, Qdelay %u  Action %f\n", *_drop_prob, _size_bytes_queue,*_current_qdelay, action);
-        printStateRing();
+	        printStateRing();
 		//uint64_t interval = timestamp() - now;
 
 		//printf("%lu\n",interval);
@@ -426,7 +450,7 @@ void PIEPacketQueue::enqueue( QueuedPacket && p )
 	static int counter = 0;
 
 	counter++;
-	if(counter == 10)
+	if(counter == 2)
 	{
     initNN();
 		pthread_create(&(this->NN_t),NULL,&NN_thread,NULL);
