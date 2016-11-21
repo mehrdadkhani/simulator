@@ -11,6 +11,13 @@ using namespace std;
 
 
 //Some Hack Here...
+#define DROPRATE_UPDATE_PERIOD 40
+#define NN_UPDATE_PERIOD 100
+#define DROPRATE_BOUND 0.3
+#define SWEEP_TIME 0
+
+
+
 
 double * _drop_prob = NULL;
 double rl_drop_prob = 0.0;
@@ -107,7 +114,7 @@ void printStateRing()
 {
     FILE *fp = NULL;
 
-    fp = fopen("/home/songtao/QueueManagement/rl-qm/mahimahiInterface/statering.txt","w");
+    fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering.txt","w");
 
     if(fp == NULL)
     {
@@ -227,7 +234,7 @@ void RunNN(float *input, float* output)
 
 	pthread_mutex_unlock(&swap_lock);
 
-	pin[0] = 1/(1.0+exp(-pin[0])) * 0.3;
+	pin[0] = 1/(1.0+exp(-pin[0])) * DROPRATE_BOUND;
 
 
 }
@@ -250,6 +257,7 @@ void* NN_thread(void* context)
 {
 	int ret = 0;
 	struct NeuralNetwork * NN;
+	int total_read = 0;
 	while(true)
 	{
 		usleep(100*1000); // Every 100ms
@@ -264,21 +272,31 @@ void* NN_thread(void* context)
 		{
 			NN = &NN_A;
 		}
-
+		ret = 0;
 		FILE *fp = NULL;
-		fp = fopen("/home/songtao/QueueManagement/rl-qm/mahimahiInterface/NN.txt","r");
+		fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN.txt","r");
+		total_read = 0;
 		if(fp == NULL)
 		{
 			printf("Failed to load parameters\n");
-			usleep(1000*10);//10 ms
+			usleep(1000*NN_UPDATE_PERIOD);//
 		}
 		else
 		{
+			total_read = 0;
 			//printf("Load Parameters\n");
 			for(int i=0;i<MAXLAYER-1;i++)
 			{
-				for(int j=0; j< NN->dim_layer[i] * NN->dim_layer[i+1]; j++) ret += fscanf(fp,"%f",&(NN->w[i][j]));
-				for(int j=0; j< NN->dim_layer[i+1]; j++) ret += fscanf(fp,"%f",&(NN->b[i][j]));
+				for(int j=0; j< NN->dim_layer[i] * NN->dim_layer[i+1]; j++)
+				{
+					ret += fscanf(fp,"%f",&(NN->w[i][j]));
+					total_read ++;
+				}
+				for(int j=0; j< NN->dim_layer[i+1]; j++)
+				{
+					ret += fscanf(fp,"%f",&(NN->b[i][j]));
+					total_read ++;
+				}
 
 			}
 			
@@ -287,7 +305,10 @@ void* NN_thread(void* context)
 		
 		//printf("Swap NN Parameters\n");
 		//Swap Buffer
-		SwapNN();
+		if(ret == total_read)
+			SwapNN();
+		else
+			printf("Load NN Parameters failed %d/%d\n",ret, total_read);
 
 	}
 	return context;
@@ -308,10 +329,10 @@ void* UpdateDropRate_thread(void* context)
 	while(true)
 	{
 		step++;
-		if(step > 1500) sweep = 0;
+		if(step * DROPRATE_UPDATE_PERIOD > SWEEP_TIME * 1000 ) sweep = 0;
 
 		//uint64_t now = timestamp();
-		usleep(1000*39);
+		usleep(1000*DROPRATE_UPDATE_PERIOD);
 	
 		UpdateState((float)(*_current_qdelay), action_old);
 	
@@ -347,7 +368,7 @@ void* UpdateDropRate_thread(void* context)
 					sweep_dp += 0.005;
 
 
-				if(sweep_dp > 0.3)
+				if(sweep_dp > DROPRATE_BOUND)
 				{
 					sweep_dp = 0.00001;
 				}
