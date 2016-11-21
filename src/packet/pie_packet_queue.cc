@@ -252,8 +252,8 @@ void* NN_thread(void* context)
 	struct NeuralNetwork * NN;
 	while(true)
 	{
-		sleep(1);
-		printf("This is NN thread Load \n");
+		usleep(100*1000); // Every 100ms
+		//printf("This is NN thread Load \n");
 
 		//TODO Load Parameter
 		if(NN_cur == &NN_A)
@@ -274,7 +274,7 @@ void* NN_thread(void* context)
 		}
 		else
 		{
-			printf("Load Parameters\n");
+			//printf("Load Parameters\n");
 			for(int i=0;i<MAXLAYER-1;i++)
 			{
 				for(int j=0; j< NN->dim_layer[i] * NN->dim_layer[i+1]; j++) ret += fscanf(fp,"%f",&(NN->w[i][j]));
@@ -285,7 +285,7 @@ void* NN_thread(void* context)
 			fclose(fp);
 		}
 		
-		printf("Swap NN Parameters\n");
+		//printf("Swap NN Parameters\n");
 		//Swap Buffer
 		SwapNN();
 
@@ -300,21 +300,71 @@ void* UpdateDropRate_thread(void* context)
 	//float state[24];
 	float action;
     static float action_old = 0;
+
+	static int sweep = 1;
+	static int step = 0;
+	static float sweep_dp = 0.00001;
+	
 	while(true)
 	{
-		usleep(1000*20);
-		//for(int i = 0; i<24; i++) state[i] = i;
+		step++;
+		if(step > 1500) sweep = 0;
+
+		//uint64_t now = timestamp();
+		usleep(1000*39);
+	
+		UpdateState((float)(*_current_qdelay), action_old);
+	
 		state_cur = &(stateRing.ring[stateRing.counter % STATE_RING_SIZE]);
+	
 		RunNN(state_cur->s, &action);
+
+		//for(int i = 0; i<24; i++) state[i] = i;
+		//state_cur = &(stateRing.ring[stateRing.counter % STATE_RING_SIZE]);
+		//RunNN(state_cur->s, &action);
         
-        UpdateState((float)(*_current_qdelay), action_old);
-        printStateRing();
+        //UpdateState((float)(*_current_qdelay), action_old);
 
 
         action_old = action;
-		rl_drop_prob = action;
-		printf("Current Drop Rate %.6lf Queue Size %u Bytes, Qdelay %u  Action %f\n", *_drop_prob, _size_bytes_queue,*_current_qdelay, action);
-		
+
+		if(sweep == 0)
+		{
+			rl_drop_prob = action * 0.75 + rl_drop_prob * 0.25;
+		}
+		else
+		{
+			if(step % 50 == 0)
+			{
+				if(sweep_dp < 0.01)
+				{
+					sweep_dp *= 2;
+				}
+				else
+					sweep_dp += 0.005;
+				
+				if(sweep_dp > 0.15)
+					sweep_dp += 0.005;
+
+
+				if(sweep_dp > 0.3)
+				{
+					sweep_dp = 0.00001;
+				}
+
+				//rl_drop_prob = sweep_dp;
+				//action_old = sweep_dp;		
+			}
+
+			rl_drop_prob = sweep_dp;
+			action_old = sweep_dp;		
+		}
+
+		//printf("Current Drop Rate %.6lf Queue Size %u Bytes, Qdelay %u  Action %f\n", *_drop_prob, _size_bytes_queue,*_current_qdelay, action);
+        printStateRing();
+		//uint64_t interval = timestamp() - now;
+
+		//printf("%lu\n",interval);
 	}
 return context;
 }
@@ -389,6 +439,7 @@ void PIEPacketQueue::enqueue( QueuedPacket && p )
 //returns true if packet should be dropped.
 bool PIEPacketQueue::drop_early ()
 {
+  /*
   if ( burst_allowance_ > 0 ) {
     return false;
   }
@@ -400,6 +451,7 @@ bool PIEPacketQueue::drop_early ()
   if ( size_bytes() < (2 * PACKET_SIZE) ) {
     return false;
   }
+  */
 
   double random = uniform_generator_(prng_);
 

@@ -5,6 +5,18 @@
 #include "timestamp.hh"
 #include "exception.hh"
 
+uint64_t raw_timestamp_micro( void )
+{
+    timespec ts;
+    SystemCall( "clock_gettime", clock_gettime( CLOCK_REALTIME, &ts ) );
+
+    uint64_t micro = ts.tv_nsec / 1000;
+    micro += uint64_t( ts.tv_sec ) * 1000000;
+
+    return micro;
+}
+
+
 uint64_t raw_timestamp( void )
 {
     timespec ts;

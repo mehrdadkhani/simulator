@@ -5,6 +5,7 @@
 
 #include <cstdint>
 
+uint64_t raw_timestamp_micro( void );
 uint64_t timestamp( void );
 uint64_t initial_timestamp( void );
 
