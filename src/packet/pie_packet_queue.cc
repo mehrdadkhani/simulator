@@ -5,6 +5,7 @@
 #include "timestamp.hh"
 #include <unistd.h>
 #include <stdio.h>
+#include <cstdlib>
 using namespace std;
 
 #define DQ_COUNT_INVALID   (uint32_t)-1
@@ -406,7 +407,7 @@ void* UpdateDropRate_thread(void* context)
 		}
 		else
 		{
-			if(step % 50 == 0)
+			if(step % 100 == 0)
 			{
 				if(sweep_dp < 0.01)
 				{
@@ -431,9 +432,10 @@ void* UpdateDropRate_thread(void* context)
 				//rl_drop_prob = sweep_dp;
 				//action_old = sweep_dp;		
 			}
-
-			rl_drop_prob = sweep_dp;
-			action_old = sweep_dp;		
+			float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+			rl_drop_prob = sweep_dp + (sweep_dp*0.05)*(2*r-1.0);
+			if(rl_drop_prob < 0) rl_drop_prob = 0;
+			action_old = rl_drop_prob;		
 		}
 
 		//printf("Current Drop Rate %.6lf Queue Size %u Bytes, Qdelay %u  Action %f\n", *_drop_prob, _size_bytes_queue,*_current_qdelay, action);
