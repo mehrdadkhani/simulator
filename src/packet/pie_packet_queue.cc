@@ -15,7 +15,7 @@ using namespace std;
 #define NN_UPDATE_PERIOD 100
 #define DROPRATE_BOUND 0.3
 #define SWEEP_TIME 0
-
+#define PATH_TO_PYTHON_INTERFACE "/home/rl/Project/rl-qm/mahimahiInterface/"
 
 
 
@@ -113,12 +113,14 @@ void UpdateState(float qdelay, float dprate)
 void printStateRing()
 {
     FILE *fp = NULL;
-    FILE *fp_lock = NULL;
+    //FILE *fp_lock = NULL;
 
-    fp_lock = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering_lock.txt","w");
-    flock(fileno(fp_lock), LOCK_EX);
+    //fp_lock = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering_lock.txt","w");
+    //flock(fileno(fp_lock), LOCK_EX);
+    char filename[512];
+    sprintf(filename,"%sstatering.txt",PATH_TO_PYTHON_INTERFACE);
 
-    fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/statering.txt","w");
+    fp = fopen(filename,"w");
 
     if(fp == NULL)
     {
@@ -126,7 +128,7 @@ void printStateRing()
     }
     else
     {
-        for(int i = 0; i<STATE_RING_SIZE - 1; i++)
+        for(int i = -2; i<STATE_RING_SIZE - 2; i++)
         {
             fprintf(fp,"%d", stateRing.counter - STATE_RING_SIZE + 1+ i);
             for(int j = 0; j< STATE_DIM; j++)
@@ -146,8 +148,8 @@ void printStateRing()
     }
     
 
-    flock(fileno(fp_lock), LOCK_UN);
-    fclose(fp_lock);
+    //flock(fileno(fp_lock), LOCK_UN);
+    //fclose(fp_lock);
 
 
 }
@@ -282,11 +284,20 @@ void* NN_thread(void* context)
 		FILE *fp = NULL;
 		FILE *fp_lock = NULL;
 
+		char filename[512];
+		sprintf(filename,"%sNN_lock.txt",PATH_TO_PYTHON_INTERFACE);
 
-		fp_lock = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN_lock.txt","r");
+
+
+		fp_lock = fopen(filename,"r");
 		flock(fileno(fp_lock), LOCK_EX);
 
-		fp = fopen("/home/rl/Project/rl-qm/mahimahiInterface/NN.txt","r");
+
+
+		sprintf(filename,"%sNN.txt",PATH_TO_PYTHON_INTERFACE);
+
+
+		fp = fopen(filename,"r");
 		
 		total_read = 0;
 		if(fp == NULL)
@@ -327,6 +338,8 @@ void* NN_thread(void* context)
 
 		//printf("Swap NN Parameters\n");
 		//Swap Buffer
+		//printf("%d\n",total_read);
+
 		if(ret == total_read)
 			SwapNN();
 		else
@@ -345,7 +358,7 @@ void* UpdateDropRate_thread(void* context)
 	//float state[24];
 	float action;
     static float action_old = 0;
-
+	FILE *fp = NULL;
 	static int sweep = 1;
 	static int step = 0;
 	static float sweep_dp = 0.00001;
@@ -353,14 +366,16 @@ void* UpdateDropRate_thread(void* context)
 	while(true)
 	{
 		step++;
-		if(step * DROPRATE_UPDATE_PERIOD > SWEEP_TIME * 1000 ) sweep = 0;
+		//if(step * DROPRATE_UPDATE_PERIOD > SWEEP_TIME * 1000 ) sweep = 0;
+		//We give the control of this to python.
+
 
 		//uint64_t now = timestamp();
 		usleep(1000*DROPRATE_UPDATE_PERIOD);
 	
 		UpdateState((float)(*_current_qdelay), action_old);
 	
-		state_cur = &(stateRing.ring[stateRing.counter % STATE_RING_SIZE]);
+		state_cur = &(stateRing.ring[(stateRing.counter -1) % STATE_RING_SIZE]);
 	
 		RunNN(state_cur->s, &action);
 
@@ -372,10 +387,22 @@ void* UpdateDropRate_thread(void* context)
 
 
         action_old = action;
+		char filename[512];
+		sprintf(filename,"%ssweep.txt",PATH_TO_PYTHON_INTERFACE);
+
+
+		fp = fopen(filename,"r");
+
+		if(fp!=NULL)
+		{
+			int ret = fscanf(fp,"%d",&sweep);
+			if(ret == 0) sweep = 0;
+			fclose(fp);
+		}
 
 		if(sweep == 0)
 		{
-			rl_drop_prob = action * 0.75 + rl_drop_prob * 0.25;
+			rl_drop_prob = action * 0.25 + rl_drop_prob * 0.75;
 		}
 		else
 		{
@@ -386,15 +413,19 @@ void* UpdateDropRate_thread(void* context)
 					sweep_dp *= 2;
 				}
 				else
-					sweep_dp += 0.005;
+					sweep_dp += 0.0025;
 				
-				if(sweep_dp > 0.15)
+				if(sweep_dp > 0.10)
 					sweep_dp += 0.005;
+
+				if(sweep_dp > 0.20)
+					sweep_dp += 0.005;
+
 
 
 				if(sweep_dp > DROPRATE_BOUND)
 				{
-					sweep_dp = 0.00001;
+					sweep_dp = 0.0001;
 				}
 
 				//rl_drop_prob = sweep_dp;
@@ -484,7 +515,7 @@ void PIEPacketQueue::enqueue( QueuedPacket && p )
 //returns true if packet should be dropped.
 bool PIEPacketQueue::drop_early ()
 {
-  /*
+/*  
   if ( burst_allowance_ > 0 ) {
     return false;
   }
@@ -496,7 +527,9 @@ bool PIEPacketQueue::drop_early ()
   if ( size_bytes() < (2 * PACKET_SIZE) ) {
     return false;
   }
-  */
+  
+*/
+
 
   double random = uniform_generator_(prng_);
 
